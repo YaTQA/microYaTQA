@@ -1,0 +1,482 @@
+@charset "utf-8";
+
+html
+{
+  overflow: hidden;
+}
+
+body
+{
+  font-family: 'Segoe UI', Tahoma Arial, sanf-serif;
+  font-size: 9pt;
+  color: #eee;
+}
+
+#window
+{
+  padding: 1px;
+  background-color: black;
+  box-shadow: 0 0 7px 2px black;
+  border-radius: 10px;
+  width: 110px;
+}
+
+#full #window
+{
+  width: auto;
+}
+
+#caption
+{
+  background-color: #0d0d0d;
+  border-radius: 9px;
+  color: #B1B1B1;
+  font-size: 13px;
+  font-weight: bold;
+  padding: 3px 4px 0 3px;
+  height: 22px;
+  text-align: center;
+}
+
+#caption span
+{
+  font-size: 0;
+}
+
+#full #caption span
+{
+  font-size: 13px;
+}
+
+#bordericons
+{
+  float: right;
+  margin-top: -3px;
+}
+
+#captionicons
+{
+  float: right;
+  margin: -2px 0 1px;
+  padding: 2px;
+  background-color: #111;
+  border-radius: 5px;
+}
+
+#captionicons>*
+{
+  float:left;
+  margin-right: 3px;
+}
+
+#mic
+{
+  background: url('mic.png');
+}
+
+#speakers
+{
+  background: url('speakers.png');
+}
+
+#mainarea
+{
+  background-color: #111;
+  margin-top: 1px;
+  padding: 8px;
+  border-bottom-right-radius: 4px;
+  border-bottom-left-radius: 4px;
+  display: none;
+}
+
+#scroller
+{
+  max-height: 600px;
+  overflow: auto;
+}
+
+#bordericons span
+{
+  display: inline-block;
+  width: 16px;
+  height: 25px;
+}
+
+#closebutton
+{
+  background: url('closebutton.png') top;
+}
+
+#treebutton
+{
+  background: url('treebutton.png') top;
+  margin-right: 3px;
+}
+
+#chatbutton
+{
+  background: url('chatbutton.png') top;
+}
+
+#bordericons span:hover,
+#full #treebutton
+{
+  background-position: bottom;
+}
+
+body#full #mainarea
+{
+  display: block;
+}
+
+body#full #window
+{
+  border-bottom-right-radius: 5px;
+  border-bottom-left-radius: 5px;
+}
+
+body#full #caption
+{
+  border-bottom-right-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+a
+{
+  color: #eee;
+  text-decoration: underline;
+}
+
+*
+{
+  cursor: default;
+}
+
+.active
+{
+  font-weight: bold;
+}
+
+.invalidserver
+{
+  color: #999;
+}
+
+/* GENERAL SERVER TREE */
+
+#channel0 div
+{
+  padding-left: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  background-position: middle left;
+  background-repeat: no-repeat;
+  margin-left: -4px;
+}
+
+#channel0 div>span
+{
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+#channel0
+{
+  padding-left: 4px;
+}
+
+.own
+{
+  font-weight: bold;
+}
+
+/* CHANNEL ICONS */
+
+.channel-normal
+{
+  background-image: url('channel-normal.png');
+}
+
+.channel-default
+{
+  background-image: url('channel-default.png');
+}
+
+.channel-password
+{
+  background-image: url('channel-password.png');
+}
+
+.channel-full
+{
+  background-image: url('channel-full.png');
+}
+
+/* CLIENT ICONS */
+
+.client-normal
+{
+  background-image: url('client-normal.png');
+}
+
+.client-away
+{
+  background-image: url('client-away.png');
+}
+
+.client-ignored
+{
+  background-image: url('client-ignored.png');
+}
+
+.client-mic-muted
+{
+  background-image: url('client-mic-muted.png');
+}
+
+.client-speakers-muted
+{
+  background-image: url('client-speakers-muted.png');
+}
+
+.client-talking
+{
+  background-image: url('client-talking.png');
+}
+
+/* SERVER LIST */
+
+#selectedserver, input
+{
+  border-radius: 5px;
+  border: 1px solid #999;
+  padding: 1px 4px;
+  overflow: hidden;
+  background-color: inherit;
+  color: inherit;
+  font: inherit;
+}
+
+form
+{
+  padding: 0;
+  margin: 0;
+}
+
+label
+{
+  background-color: inherit;
+  color: inherit;
+  font: inherit;
+}
+
+#pwinput
+{
+  width: 80px;
+}
+
+#selectedserver:after
+{
+  content: " ▼";
+}
+
+#servers
+{
+  position: relative;
+  overflow: visible;
+  height: 22px;
+  white-space: nowrap;
+  margin-bottom: 6px;
+}
+
+#serverlist
+{
+  left: 0;
+  border-radius: 5px;
+  border: 1px solid #999;
+  /*border-top-left-radius: 0;
+  border-top-right-radius: 0;*/
+  padding: 1px;
+  background-color: #111;
+  margin: -1px 2px 0;
+  z-index: 1337;
+  position: relative;
+}
+
+#serverlist div
+{
+  padding: 0 3px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+#serverlist div:hover
+{
+  background-color: #333;
+}
+
+#serverlist .selected,
+#menu.open>div:hover,
+#menu.open>div:hover>a,
+#channel0 div.selected>span
+{
+  background-color: #fa0 !important;
+  color: #000 !important;
+}
+
+#menu
+{
+  background-color: #222;
+  margin: -8px -8px 8px;
+  border-bottom: 1px solid #333;
+  /*padding: 2px 0;*/
+}
+
+#menu>div
+{
+  position: relative;
+  display: inline-block;
+}
+
+a
+{
+  text-decoration: none;
+}
+
+#menu>div>a
+{
+  padding: 2px 8px;
+  display: inline-block;
+}
+
+#menu>div:hover
+{
+  background-color: #333;
+}
+
+#menu div div
+{
+  display: none;
+}
+
+#menu.open div:hover div
+{
+  display: block;
+  top: 19px;
+  left: 0;
+}
+
+#channelmenu
+{
+  left: 20px;
+  position: absolute;
+}
+
+.submenu
+{
+  position: absolute;
+  border: 1px solid #999;
+  padding: 1px;
+  background: #111;
+  z-index: 1; 
+  border-radius: 5px;
+  box-shadow: 2px 2px 2px #000;
+  border-top-left-radius: 0px;
+  font-size: 9pt;
+  color: #eee;
+  font-weight: normal;
+  text-align: left;
+}
+
+hr
+{
+  border: none;
+  border-bottom: 1px solid #666;
+  padding: 0;
+  margin: 1px 0;
+}
+
+.submenu a
+{
+  color: #eee;
+  display: block;
+  padding: 1px 4px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
+.submenu a:hover
+{
+  background: #333;
+}
+
+/* CHAT */
+
+#chatarea
+{
+  position: absolute;
+  top: 56px;
+  left: 16px;
+  right: 16px;
+  background-color: transparent;
+  overflow: hidden;
+}
+
+#chatarea>div
+{
+  border-radius: 8pt;
+  background-color: rgba(51,51,51,0.85);
+  padding: 2px 5px;
+  border: 1px solid #000;
+  box-shadow: 0 0 6px #000;
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 8px;
+}
+
+#chatarea>div:hover
+{
+  background-color: rgba(51,51,51,1);
+}
+
+.sender
+{
+  color: #f90;
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  display: block;
+}
+
+.messageactions
+{
+  position: absolute;
+  right: 0;
+  top: 0;
+  background-color: #0d0d0d;
+  padding: 1px 4px;
+  display: none;
+  border-bottom-left-radius: 7px;
+}
+
+.messageactions a
+{
+  color: white;
+  text-decoration: none;
+}
+
+.messageactions a:hover
+{
+  text-decoration: underline;
+}
+
+#chatarea>div:hover .messageactions
+{
+  display: block;
+}
+
+#chatarea a
+{
+  color: white;
+  text-decoration: underline;
+}

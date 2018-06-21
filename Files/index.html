@@ -1,0 +1,990 @@
+<html>
+<head>
+	<meta content="text/html; charset=utf-8" http-equiv="Content-Type" />
+	<title>µYaTQA</title>
+	<link rel="stylesheet" href="style.css" />
+	<script type="text/javascript" src="overwolfplugin.js"></script>
+	<script type="text/javascript">
+        function addEvent(obj, name, func)
+        {
+            if (obj.attachEvent) {
+                obj.attachEvent("on"+name, func);
+            } else {
+                obj.addEventListener(name, func, false); 
+            }
+        }
+		
+		function dragMove()
+		{
+			overwolf.windows.getCurrentWindow(function(result)
+			{
+				if (result.status=="success")
+				{
+					overwolf.windows.dragMove(result.window.id);
+				}
+			});
+		};
+		
+		function closeWindow()
+		{
+			overwolf.windows.getCurrentWindow(function(result)
+			{
+				if (result.status=="success")
+				{
+					overwolf.windows.close(result.window.id);
+				}
+			});
+		};
+			
+		
+		// JANNIS KRAM
+		
+		var activeServer;
+		var selectedServer;
+		var messageCount = 0;
+		var myId;
+		var clientObjects;
+		var selection = new Array;
+		var popupChannel;
+		var inputServer;
+		var muteCount;
+		var unmuteCount;
+		
+		var plugin = null;
+		var tsPlugin = null;
+		function plugin0()
+        {
+            if (plugin != null)
+				return;
+			plugin = new OverwolfPlugin("teamspeak-plugin", true);
+			plugin.initialize(function(status) {
+				plugin.get().init("Gw2 Ts3 Objectives", function(res,data) {
+					console.log("TS Init: ",res, data);
+					if (data != null && data.activeServerId) {
+						activeServer = data.activeServerId;
+					}
+
+					tsPlugin = plugin.get();
+					
+					if (res.success) {
+						pluginLoaded();
+					}
+					else {
+						console.error("Unable connect to TeamSpeak: ", res.error);
+					}
+				});
+			});
+        }
+		
+		function isset(v)
+		{
+			return (typeof(v) == "undefined") ? false : true;
+		}
+		
+		function escapeHTML(s)
+		{
+			// REPLACE HTML CONTROL CHARACTERS WITH ENTITIES
+			s = s.replace(/&/g, "&amp;");
+			s = s.replace(/"/g, "&quot;");
+			s = s.replace(/</g, "&lt;");
+			return s.replace(/>/g, "&gt;");
+		}
+		
+		
+		function formatHTML(s)
+		{
+		    // PROCESS BBCODE
+			s = escapeHTML(s);
+			s = s.replace(/\[b\]/gi, "<b>");
+			s = s.replace(/\[\/b\]/gi, "</b>");
+			s = s.replace(/\[i\]/gi, "<i>");
+			s = s.replace(/\[\/i\]/gi, "</i>");
+			s = s.replace(/\[u\]/gi, "<u>");
+			s = s.replace(/\[\/u\]/gi, "</u>");
+			s = s.replace(/\[color=([\w#]+)\]/gi, '<span style="color:$1">');
+			s = s.replace(/\[\/color\]/gi, "</span>");
+			s = s.replace(/\[url=([^\]]+)\]/gi, '<a href="$1" target="_blank">');
+			s = s.replace(/\[url\]([^\[]+)\[\/url\]/gi, '<a href="$1" target="_blank">$1</a>');
+			s = s.replace(/\[\/url\]/gi, "</a>");
+			s = s.replace(/(<a href="https?:\/\/youtu\.be\/([^"]+)" target="_blank">)([^<]+)<\/a>/gi, '$1$3</a> <a onclick="embed(this)" title="$2">[Embed]</a>');
+			s = s.replace(/(<a href="https?:\/\/www\.youtube\.com\/watch\?v=([^"]+)" target="_blank">)([^<]+)<\/a>/gi, '$1$3</a> <a onclick="embed(this)" title="$2">[Embed]</a>');
+			return s;
+		}
+		
+		function addZeroes(i, count)
+		{
+			var s = String(i);
+			while (s.length < count)
+			{
+				s = "0" + s;
+			}
+			return s;
+		}
+		
+		// EVENT HANDLERS
+		
+		function onDisconnectedFromClient()
+		{
+			disconnect();
+		}
+		
+		function onServerStatusChange(obj)
+		{
+			if ((obj.serverId == selectedServer) && (obj.status == "DISCONNECTED"))
+			{
+				document.getElementById("channel0").innerHTML = 'Disconnected';
+				document.getElementById("channelmenu").style.display = "none";
+			}
+			setTimeout(updateServerList(), 1000); // obviously returns nothing right after disconnecting
+		}
+		
+		function onActiveServerChanged(i)
+		{
+			activeServer = i;
+			updateServerList();
+		}
+		
+		function onTalkStatusChanged(obj)
+		{
+			var client = document.getElementById("client" + obj.clientId);
+			
+			if ( client != null )
+			{
+				// as long as we don't have a server supplied, we can at least check if the name matches
+				if ( escapeHTML(obj.clientName) == client.firstChild.innerHTML )
+				{
+					if ( obj.state == "Talk" )
+					{
+						client.className = client.className.replace(/normal/, "talking");
+					}
+					if ( obj.state == "StopTalk" )
+					{
+						client.className = client.className.replace(/talking/, "normal");
+					}
+				}
+			}
+		}
+		
+		function onClientUpdated(obj)
+		{
+			if ( obj.isOwnClient )
+			{
+				updateAudioStatus();
+			}
+			if ( isset(document.getElementById("client" + obj.clientId)) )
+			{
+				tsPlugin.getClientInfo({serverId: selectedServer, clientId: obj.clientId}, function (errorObject, client) {
+					updateClientInChannel(client, document.getElementById("client" + obj.clientId).parentNode.id.substr(7));
+				});
+			}
+		}
+		
+		function onChannelUpdated(obj)
+		{
+			console.log(obj);
+			if ( obj.serverId == selectedServer )
+			{
+				console.log("updating channel");
+				updateChannel(obj);
+			}
+		}
+		
+		function onChannelDeleted(obj)
+		{
+			if ( obj.serverId == selectedServer )
+			{
+				kill("channel" + obj.clientId); // TODO: Fix if overwolf fixes that bug.
+			}
+		}
+		
+		function onClientEvent(obj)
+		{
+			console.log("ClientEvent:", obj);
+			if ( obj.newChannelId != null )
+			{
+				if ( obj.newChannelId == 0 )
+				{
+					kill("client" + obj.clientId);
+				} else {
+					tsPlugin.getClientInfo({serverId: selectedServer, clientId: obj.clientId}, function (errorObject, client) {
+						updateClientInChannel(client, obj.newChannelId);
+					});
+				}
+			} else {
+				tsPlugin.getClientInfo({serverId: selectedServer, clientId: obj.clientId}, function (errorObject, client) {
+					updateClientInChannel(client, obj.channelId);
+				});
+			}
+		}
+		
+		function onTextMessageReceived(obj)
+		{
+			// Threads...
+			messageCount = messageCount++ + 1;
+			date = new Date;
+			
+			// Add time and user name
+			var s = '<div id="message' + messageCount + '" class="' + obj.target.toLowerCase() + '"><span class="sender">[' + addZeroes(date.getHours(), 2) + ':' + addZeroes(date.getMinutes(), 2) + ':' + addZeroes(date.getSeconds(), 2) + '] ' + escapeHTML(obj.fromClientName) + '</span><span class="messageactions">';
+			
+			// Add reply to channel/server
+			if ( !(obj.target == "Client") )
+			{
+				s += '<a onclick="reply(' + obj.serverId + ', \'' + obj.target + '\', ' + obj.fromClientId + ', \'' + escape(obj.fromClientName) + '\')">Reply</a>&nbsp;·&nbsp;';
+			}
+			
+			// Add whisper link unless it's sent to myself
+			var b = true;
+			tsPlugin.getServerInfo(obj.serverId, function(errorObject, serverInfo) {
+				console.log( obj.fromClientId, serverInfo.myClientId );
+				if ( obj.fromClientId == serverInfo.myClientId ) {
+					b = false;
+				}
+				
+				if (b)
+			{
+				s += '<a onclick="reply(' + obj.serverId + ', \'Client\', ' + obj.fromClientId + ', \'' + escape(obj.fromClientName) + '\')">Whisper</a>&nbsp;·&nbsp;';
+			}
+			// Add close
+			s += '<a onclick="kill(\'message' + messageCount + '\')">Close</a></span>';
+			if (!b && (obj.target == "Client")) {
+				s += '<span class="sender">to ' + escapeHTML(obj.toClientName) + '</span>';
+			}
+			document.getElementById("chatarea").innerHTML = s + '<div>' + formatHTML(obj.message) + '</div></div>' + document.getElementById("chatarea").innerHTML;
+			});
+		}
+		
+		// INTERFACE FUNCTIONS
+		
+		function disconnect()
+		{
+			document.getElementById("activearea").style.display = "none";
+			document.getElementById("error").style.display = "block";
+		}
+		
+		function hideAllMenus()
+		{
+			document.getElementById("menu").className = "";
+			document.getElementById("serverlist").style.display = "none";
+			document.getElementById("channelmenu").style.display = "none";
+			document.getElementById("speakermenu").style.display = "none";
+		}
+		
+		function toggleTree()
+		{
+			if (document.body.id == "full")
+			{
+				document.body.id = "";
+				localStorage["tree"] = 0;
+			} else {
+				document.body.id = "full";
+				localStorage["tree"] = 1;
+			}
+			hideAllMenus();
+		}
+		
+		function updateAudioStatus()
+		{
+			inputServer = null;
+			muteCount = 0;
+			unmuteCount = 0;
+			var tempServerId = new Array;
+			
+			document.getElementById("mic").src = "overlay-unknown.png";
+			document.getElementById("speakers").src = "overlay-unknown.png";
+			
+			tsPlugin.getAllServersInfo(function(errorObject,servers) {
+				//var result;
+				//console.log("All servers:" ,errorObject , servers);
+				for (var server in servers)
+				{
+					if ( isset(servers[server].nickName) ) {
+						tempServerId.push(servers[server].serverId);
+						
+						tsPlugin.getClientInfo({serverId: servers[server].serverId, clientId: servers[server].myClientId}, function (errorObject, client) {
+							// Check for input device
+							console.log("audiostatus", client);
+							var server = tempServerId[0];
+							tempServerId.splice(0, 1); // Fuck threads!
+							if (client.hasInputputDevice && !client.isOutputMuted)
+							{
+								console.log("audiostatus ja");
+								inputServer = server;
+								if (client.isInputMuted)
+								{
+									document.getElementById("mic").src = "overlay-muted.png";
+								} else {
+									document.getElementById("mic").src = "overlay-dummy.png";
+								}
+							}
+							
+							if (client.isOutputMuted) {
+								muteCount++;
+							} else {
+								unmuteCount++;
+							}
+							
+							if ( (muteCount == 0) && (unmuteCount > 0) )
+							{
+								document.getElementById("speakers").src = "overlay-dummy.png";
+							} else
+							if ( (muteCount > 0) && (unmuteCount == 0) )
+							{
+								document.getElementById("speakers").src = "overlay-muted.png";
+							} else {
+								document.getElementById("speakers").src = "overlay-unknown.png";
+							}
+						});
+					}
+				}
+			});
+		}
+		
+		function toggleMenu()
+		{
+			if (document.getElementById("menu").className == "")
+			{
+				hideAllMenus();
+				document.getElementById("menu").className = "open";
+			} else {
+				document.getElementById("menu").className = "";
+			}
+		}
+		
+		function toggleSpeakerMenu()
+		{
+			if (document.getElementById("speakermenu").style.display == "none")
+			{
+				document.getElementById("speakermenu").style.display = "block";
+			} else {
+				document.getElementById("speakermenu").style.display = "none";
+			}
+		}
+		
+		function toggleChat()
+		{
+			if (document.getElementById("chatarea").style.display == "none")
+			{
+				document.getElementById("chatarea").style.display = "block";
+				document.getElementById("chatbutton").style.backgroundPosition = "bottom";
+				localStorage["chat"] = 1;
+			} else {
+				document.getElementById("chatarea").style.display = "none";
+				document.getElementById("chatbutton").style.backgroundPosition = "";
+				localStorage["chat"] = 0;
+			}
+		}
+		
+		function showChannelMenu(channelId)
+		{
+			if ((popupChannel != channelId) || (document.getElementById("channelmenu").style.display == "none") )
+			{
+				hideAllMenus();
+				popupChannel = channelId;
+				document.getElementById("channelmenu").style.top = window.event.y+1;
+				document.getElementById("channelmenu").style.display = "block";
+				document.getElementById("password").style.display = ((document.getElementById("channel"+channelId).className.indexOf("password") > -1)?"block":"none");
+				if ( document.getElementById("password").style.display == "block" )
+				{
+					var temp = localStorage[channelId + '|' + document.getElementById("channel"+channelId).firstChild.innerHTML];
+					if ( isset(temp) )
+					{
+						document.getElementById("pwinput").value = temp;
+					} else {
+						document.getElementById("pwinput").value = '';
+					}
+				}
+			} else {
+				hideAllMenus();
+			}
+		}
+		
+		function savePassword()
+		{
+			localStorage[popupChannel + '|' + document.getElementById("channel"+popupChannel).firstChild.innerHTML] = document.getElementById("pwinput").value;
+		}
+		
+		function goHere()
+		{
+			hideAllMenus();
+			var temp = new Array;
+			temp[0] = myId;
+			move(temp);
+		}
+		
+		function moveHere()
+		{
+			hideAllMenus();
+			move(selection);
+		}
+		
+		function move(clients)
+		{
+			for (var i = 0; i < clients.length; i++)
+			{
+				if ( isset(document.getElementById("client" + clients[i])) )
+				{
+					tsPlugin.switchChannel({serverId: selectedServer, channelId: popupChannel, password: document.getElementById("pwinput").value, clientId: clients[i]}, function(errorObject) {} );
+				}
+			}
+		}
+		
+		function toggleMic()
+		{
+			if (document.getElementById("mic").src.indexOf("overlay-muted.png") > -1) // Awesomium converts this to some strange URL
+			{
+				tsPlugin.updateClientDeviceState({serverId: inputServer, muteMicrophone: false}, function(errorObject) {});
+			} else if (document.getElementById("mic").src.indexOf("overlay-dummy.png") > -1)
+			{
+				tsPlugin.updateClientDeviceState({serverId: inputServer, muteMicrophone: true}, function(errorObject) {});
+			}
+		}
+		
+		function muteSelected(status)
+		{
+			tsPlugin.updateClientDeviceState({serverId: selectedServer, muteSpeakers: status}, function(errorObject) {});
+			toggleSpeakerMenu();
+		}
+		
+		function muteTab(status)
+		{
+			tsPlugin.updateClientDeviceState({serverId: selectedServer, muteSpeakers: status}, function(errorObject) {});
+			toggleSpeakerMenu();
+		}
+		
+		function muteAll(status)
+		{
+			tsPlugin.getAllServersInfo(function(errorObject,servers) {
+				for (var server in servers)
+				{
+					tsPlugin.updateClientDeviceState({serverId: servers[server].serverId, muteSpeakers: status}, function(errorObject) {});
+				}
+			});
+			toggleSpeakerMenu();
+		}
+		
+		function kill(entity)
+		{
+			document.getElementById(entity).outerHTML = "";
+		}
+		
+		function selectClient(clientId)
+		{
+			if ( selection.indexOf(String(clientId)) == -1 )
+			{
+				selection.push(String(clientId));
+				document.getElementById("client" + clientId).className += ' selected';
+			}
+		}
+		
+		function unselectClient(clientId)
+		{
+			if ( selection.indexOf(String(clientId)) > -1 )
+			{
+				selection.splice(selection.indexOf(String(clientId)), 1);
+				document.getElementById("client" + clientId).className = document.getElementById("client" + clientId).className.replace(/ selected/, '');
+			}
+		}
+		
+		function selectMembers()
+		{
+			hideAllMenus();
+			for (var i = 0; i < document.getElementById("channel" + popupChannel).childNodes.length; i++)
+			{
+				if ( String(document.getElementById("channel" + popupChannel).childNodes[i].className).indexOf("client-" ) > -1 )
+				{
+					selectClient(document.getElementById("channel" + popupChannel).childNodes[i].id.substr(6));
+				}
+			}
+		}
+		
+		function unselectMembers()
+		{
+			hideAllMenus();
+			for (var i = 0; i < document.getElementById("channel" + popupChannel).childNodes.length; i++)
+			{
+				if ( String(document.getElementById("channel" + popupChannel).childNodes[i].className).indexOf("client-" ) > -1 )
+				{
+					selectClient(document.getElementById("channel" + popupChannel).childNodes[i].id.substr(6));
+				}
+			}
+		}
+		
+		function toggleClient(clientId)
+		{
+			hideAllMenus();
+			if ( selection.indexOf(String(clientId)) == -1 )
+			{
+				selectClient(clientId);
+			} else {
+				unselectClient(clientId);
+			}
+		}
+		
+		function selectAll(pattern)
+		{
+			toggleMenu();
+			var elements = document.getElementsByTagName("div");
+			for (var i = 0; i < elements.length; i++)
+			{
+				if ( elements[i].className.indexOf("client-" + pattern ) > -1 )
+				{
+					selectClient(elements[i].id.substr(6));
+				}
+			}
+		}
+		
+		function unselectAll(pattern)
+		{
+			toggleMenu();
+			var elements = document.getElementsByTagName("div");
+			for (var i = 0; i < elements.length; i++)
+			{
+				if ( elements[i].className.indexOf("client-" + pattern ) > -1 )
+				{
+					unselectClient(elements[i].id.substr(6));
+				}
+			}
+		}
+		
+		function reply(serverId, type, clientId, clientName)
+		{
+			if (type == "Client")
+			{
+				var s = prompt("Send a private message to " + unescape(clientName) + ":", "");
+			} else {
+				var s = prompt("Send a " + type.toLowerCase() + " message in reply to " + unescape(clientName) + ":", "");
+			}
+			if ( s.length > 0 ) {
+				tsPlugin.sendTextMessage({serverId: serverId, type: type, targetId: clientId, message: s}, function(errorObject) {});
+			}
+		}
+		
+		function simpleMessage(type)
+		{
+			toggleMenu();
+			if ( ( document.getElementById("activearea").style.display != "none" ) && ( document.getElementById("channel0").childNodes.length > 1 ) )
+			{
+				var s = prompt("Send a " + type.toLowerCase() + " message:", "");
+			
+				if ( s.length > 0 ) {
+					tsPlugin.sendTextMessage({serverId: selectedServer, type: type, targetId: 1337, message: s}, function(errorObject) {});
+				}
+			}
+		}
+		
+		function selectionMessage()
+		{
+			toggleMenu();
+			if ( ( selection.length > 0 ) && ( document.getElementById("activearea").style.display != "none" ) && ( document.getElementById("channel0").childNodes.length > 1 ) )
+			{
+				var s = prompt("Send a private message to all selected clients:", "");
+				
+				if ( s.length > 0 )
+				{
+					for (var i = 0; i < selection.length; i++)
+					{
+						if ( selection[i] != myId )
+						{
+							tsPlugin.sendTextMessage({serverId: selectedServer, type: "Client", targetId: selection[i], message: s}, function(errorObject) {});
+						}
+					}
+				}
+			}
+		}
+		
+		function selectServer(server, client)
+		{
+			selectedServer = server;
+			myId = client;
+			document.getElementById("selectedserver").innerHTML = document.getElementById("server" + server).innerHTML;
+			document.getElementById("serverlist").style.display = "none";
+			updateServerList();
+			updateTree();
+		}
+		
+		function serverSelectorClick()
+		{
+			if (document.getElementById("serverlist").style.display == "none")
+			{
+				hideAllMenus();
+				document.getElementById("serverlist").style.display = "block";
+			} else {
+				document.getElementById("serverlist").style.display = "none";
+			}
+		}
+		
+		function updateServerList()
+		{
+			//document.getElementById("serverlist").innerHTML = '';
+			tsPlugin.getAllServersInfo(function(errorObject,servers) {
+				//var result;
+				//console.log("All servers:" ,errorObject , servers);
+				var s = '';
+				for (var server in servers)
+				{
+					if ( isset(servers[server].nickName) ) {
+						s += '<div id="server' + servers[server].serverId + '" class="' + ((servers[server].serverId == selectedServer) ? ' selected' : '') + ((servers[server].serverId == activeServer) ? ' active' : '') + '" onclick="selectServer(' + servers[server].serverId + ', ' + servers[server].myClientId + ')">' + servers[server].nickName + '</div>';
+					}
+					else
+					{
+						s += '<div id="server' + servers[server].serverId + '" class="invalidserver' + ((servers[server].serverId == selectedServer) ? ' selected' : '') + ((servers[server].serverId == activeServer) ? ' active' : '') + '">(Not Connected)</div>';
+					}
+				}
+				document.getElementById("serverlist").innerHTML = s;
+			});
+			//var clientinfoparams = new ClientInfoParams(1, 508);
+			//var clients;
+			//tsPlugin.getChannelClientList (clientinfoparams, function(errorObject,clients) {
+			//	console.log("All clients in channel:" , clients);
+			//});
+		}
+		
+		function updateChannel(channel)
+		{
+			var oldChannel = document.getElementById("channel" + channel.channelId);
+			
+			// Determine which class (and therefore icon) to use
+			var cssClass = 'normal';
+			if ( channel.isDefault )
+			{
+				cssClass = 'default';
+			} else
+			if ( channel.hasPassword )
+			{
+				cssClass = 'password';
+			} else
+			if ( (channel.maxClients > -1) && ( channel.maxClients <= channel.clients ) )
+			{
+				cssClass = 'full';
+			}
+			
+			console.log("Adding", channel.channelId, channel.parentId, channel.orderAfterChannelId);
+			
+			// Insert channel at the right place
+			if (oldChannel != null)
+			{
+				oldChannel.className = "channel-" + cssClass;
+				oldChannel.firstChild.innerHTML = channel.channelName;
+				if ( oldChannel.parentNode.id != "channel" + channel.parentId )
+				{
+					var s = oldChannel.outerHTML; // because having twice the same ID is illegal, we delete before we add
+					oldChannel.parentElement.removeChild(oldChannel);
+				}
+			} else {
+				var s = '<div class="channel-' + cssClass + '" id="channel' + channel.channelId + '"><span onclick="showChannelMenu(' + channel.channelId + ')">' + escapeHTML(channel.channelName) + '</span></div>';
+			}
+			
+			if (channel.orderAfterChannelId == 0)
+			{
+				//var insertAfter = document.getElementById("channel" + channel.parentId).firstChild;
+				//for ( var i = 0; i < document.getElementById("channel" + channel.parentId).childNodes.length; i++ )
+				//{
+				//	console.log(String(document.getElementById("channel" + channel.parentId).childNodes[i].className));
+				//	if ( String(document.getElementById("channel" + channel.parentId).childNodes[i].className).indexOf("client") > -1 )
+				//	{
+				//		insertAfter = document.getElementById("channel" + channel.parentId).childNodes[i];
+				//	}
+				//}
+				document.getElementById("channel" + channel.parentId).firstChild.outerHTML += s;
+			} else {
+				document.getElementById("channel" + channel.orderAfterChannelId).outerHTML += s;
+			}
+			
+			// Update clients
+			if ( channel.clients > 0 )
+			{
+				updateClientsInChannel(channel.channelId);
+			}
+		}
+		
+		function updateClientsInChannel(channelId)
+		{
+			tsPlugin.getChannelClientList({serverId: selectedServer, channelId: channelId}, function (errorObject, clients)
+			{
+				// Add channelId to parameters, because you cannot get this from an empty channel that just needs to be cleaned up
+				addClientsToChannel(clients, channelId);
+			});
+		}
+		
+		function addClientsToChannel(clients, channelId)
+		{
+			console.log("Clients in " + channelId + ":", clients);
+			var channel = document.getElementById("channel" + channelId);
+			
+			// Clean up previous clients
+			for (var child = 0; child < channel.childNodes.length; child++)
+			{
+				console.log(child);
+				if (channel.childNodes[child].className.substr(0, 6) == "client") {
+					channel.removeChild(channel.childNodes[child]);
+				}
+			}
+			
+			for (var client in clients)
+			{
+				updateClientInChannel(clients[client], channelId);
+			}
+		}
+		
+		function updateClientInChannel(client, channel)
+		{
+			var oldClient = document.getElementById("client" + client.clientId);
+			
+			console.log("Adding client: ", client);
+			
+			// Determine which class (and therefore icon) to use
+			var cssClass = 'normal';
+			if ( client.isMuted )
+			{
+				cssClass = 'ignored';
+			} else
+			if ( client.isAway )
+			{
+				cssClass = 'away';
+			} else
+			if ( client.isOutputMuted )
+			{
+				cssClass = 'speakers-muted';
+			} else
+			if ( client.isInputMuted || !client.hasInputputDevice )  // bugged
+			{
+				cssClass = 'mic-muted';
+			} else
+			if ( client.isTalking ) // you can't get this from your own client
+			{
+				cssClass = 'talking';
+			}
+			
+			if ( client.clientId == myId ) // isOwnClient does not work, so we use myId instead
+			{
+				cssClass += ' own';
+			}
+			
+			if ( selection.indexOf(String(client.clientId)) > -1 )
+			{
+				cssClass += ' selected';
+			}
+			
+			if (oldClient != null)
+			{
+				oldClient.className = "client-" + cssClass;
+				oldClient.firstChild.innerHTML = client.nickname;
+				// TODO: Einsortieren
+				var s = oldClient.outerHTML; // because having twice the same ID is illegal, we delete before we add
+				oldClient.outerHTML = "";
+			} else {
+				s = '<div class="client-' + cssClass + '" id="client' + client.clientId + '" title="' + client.talkPower + '"><span onclick="toggleClient(' + client.clientId + ')">' + escapeHTML(client.nickname) + '</span></div>';
+			}
+			
+			// Insert at the right position
+			var insertAfter = document.getElementById("channel" + channel).firstChild;
+			for (var i = 0; i < document.getElementById("channel" + channel).childNodes.length; i++)
+			{
+				// While I must go below, set insertAfter
+				console.log(Number(document.getElementById("channel" + channel).childNodes[i].title), Number(client.talkPower));
+				if ( Number(document.getElementById("channel" + channel).childNodes[i].title) == Number(client.talkPower) )
+				{
+					//console.log("tp equal", String(document.getElementById("channel" + channel).childNodes[i].firstChild.innerHTML).toLowerCase, String(client.nickname).toLowerCase);
+					if ( String(document.getElementById("channel" + channel).childNodes[i].firstChild.innerHTML).toLowerCase() < escapeHTML(String(client.nickname).toLowerCase()) )
+					{
+						//console.log(String(document.getElementById("channel" + channel).childNodes[i].firstChild.innerHTML).toLowerCase, "<", String(client.nickname).toLowerCase);
+						insertAfter = document.getElementById("channel" + channel).childNodes[i];
+					}
+				} else if ( Number(document.getElementById("channel" + channel).childNodes[i].title) > Number(client.talkPower) ) {
+					insertAfter = document.getElementById("channel" + channel).childNodes[i];
+				}
+			}
+			insertAfter.outerHTML += s;
+		}
+		
+		function updateTree()
+		{
+			document.getElementById("channel0").innerHTML = '<span></span>';
+			clientsObjects = new Array;
+			selection = new Array;
+			var channels;
+			
+			tsPlugin.getChannelList(selectedServer, function(errorObject,channels) {
+				console.log("All channels:" , channels);
+				var b;
+				do
+				{
+					b = false;
+					for (var channel in channels)
+					{
+						if (channels[channel].channelId > 0)
+						{
+							if (( document.getElementById("channel" + channels[channel].parentId) != null ) && ( document.getElementById("channel" + channels[channel].orderAfterChannelId) != null ))
+							{
+								updateChannel(channels[channel]);
+								channels[channel].channelId = 0;
+							} else {
+								b = true;
+							}
+						}
+					}
+				} while (b)
+			});
+		}
+        
+        function load()
+        {
+
+        }
+		
+		function embed(sender)
+		{
+			sender.outerHTML = '<iframe width="168" height="120" src="http://www.youtube.com/embed/' + sender.title + '" frameborder="0" allowfullscreen></iframe>';
+		}
+		
+		function welcome()
+		{
+			overwolf.windows.obtainDeclaredWindow("welcome", function(result){
+				if (result.status == "success"){
+					overwolf.windows.restore(result.window.id, function(result){});
+				}
+			});
+		}
+		
+        function pluginLoaded() {			
+			tsPlugin.onDisconnectedFromClient.addListener(onDisconnectedFromClient );
+			
+            tsPlugin.onServerStatusChanged.addListener(onServerStatusChange );
+			
+			tsPlugin.onActiveServerChanged.addListener(onActiveServerChanged );
+			
+			tsPlugin.onClientEvent.addListener(onClientEvent );
+			
+			tsPlugin.onClientUpdated.addListener(onClientUpdated );
+			
+			tsPlugin.onChannelUpdated.addListener(onChannelUpdated ); // seems to work once per channel in current tab only (and therefore doesn't make any sense)
+																		// don't need a new function for that (if on the same server at least 
+			tsPlugin.onChannelDeleted.addListener(onChannelDeleted );
+			
+			tsPlugin.onTalkStatusChanged.addListener(onTalkStatusChanged );
+			
+			tsPlugin.onTextMessageReceived.addListener(onTextMessageReceived );
+			
+			setTimeout(function() {
+			
+			tsPlugin.init({name: "YaTQA"}, function(result,servers) {
+				console.log("result: ", result, servers);
+				
+				if (result.success) {
+					document.getElementById("error").style.display = "none";
+					document.getElementById("activearea").style.display = "block";
+				} else {
+					disconnect();
+				}
+				
+				activeServer = servers.activeServerId;
+					
+				updateServerList();
+				
+				updateAudioStatus();
+				});
+				
+			}, 1);
+			
+			if (localStorage["tree"] == 1)
+			{
+				toggleTree();
+			}
+			
+			if (localStorage["chat"] != 1)
+			{
+				toggleChat();
+			}
+			
+			if (localStorage["welcome"] != 1)
+			{
+				localStorage["welcome"] = 1;
+				welcome();
+			}
+        }
+
+    </script>
+</head>
+<body onload="plugin0()">
+<!-- <object id="plugin0" type="application/x-overwolfteamspeakplugin" style="height:0;width:0;">
+	<param name="onload" value="pluginLoaded" />
+</object> -->
+<div id="window">
+	<div id="caption" onmousedown="dragMove();">
+	<span>µYaTQA</span>
+	<div id="bordericons">
+	<span id="chatbutton" style="background-position:bottom" onclick="toggleChat();"></span><span id="treebutton" onclick="toggleTree();"></span><span id="closebutton" onclick="closeWindow();"></span>
+	</div>
+	<div id="captionicons" style="float:left">
+	<img id="mic" src="overlay-dummy.png" alt="" onclick="toggleMic()" /><div style="position:inline-block"><img id="speakers" src="overlay-dummy.png" alt="" onclick="toggleSpeakerMenu()" />
+	<div class="submenu" id="speakermenu" style="display:none">
+		<a onclick="muteSelected(true)">Mute Selected Server</a>
+		<a onclick="muteTab(true)">Mute Current Tab</a>
+		<a onclick="muteAll(true)">Mute All</a>
+		<a onclick="muteSelected(false)">Unmute Selected Server</a>
+		<a onclick="muteTab(false)">Unmute Current Tab</a>
+		<a onclick="muteAll(false)">Unmute All</a>
+	</div>
+	</div>
+	</div>
+	</div>
+    <div id="mainarea">
+	<div id="error" style="display:none">
+	Could not connect to the TeamSpeak client. Please make sure it is running, connected to a server and the Client Control Plugin is enabled.<br /><br /><a onclick="pluginLoaded()">Try again!</a>
+	</div>
+	<div id="activearea">
+	<div id="menu">
+	<div><a onclick="toggleMenu()">Select</a>
+	<div class="submenu">
+	<a onclick="selectAll('')">All</a>
+	<hr />
+	<a onclick="selectAll('talking')">Talking</a>
+	<a onclick="selectAll('normal')">Non-Talking</a>
+	<a onclick="selectAll('mic-muted')">Mic Muted</a>
+	<a onclick="selectAll('speakers-muted')">Speakers Muted</a>
+	<a onclick="selectAll('away')">Away</a>
+	<a onclick="selectAll('ignored')">Locally Muted</a>
+	</div>
+	</div><div><a onclick="toggleMenu()">Unselect</a>
+	<div class="submenu">
+	<a onclick="unselectAll('')">All</a>
+	<hr />
+	<a onclick="unselectAll('talking')">Talking</a>
+	<a onclick="unselectAll('normal')">Non-Talking</a>
+	<a onclick="unselectAll('mic-muted')">Mic Muted</a>
+	<a onclick="unselectAll('speakers-muted')">Speakers Muted</a>
+	<a onclick="unselectAll('away')">Away</a>
+	<a onclick="unselectAll('ignored')">Locally Muted</a>
+	</div>
+	</div><div><a onclick="toggleMenu()">Chat</a>
+	<div class="submenu">
+	<a onclick="simpleMessage('Server')">Server...</a>
+	<a onclick="simpleMessage('Channel')">Channel...</a>
+	<a onclick="selectionMessage()">Selection...</a>
+	</div></div>
+	<div><a onclick="welcome()">?</a></div>
+	</div>
+	<div id="servers">
+	<div id="selectedserver" onclick="serverSelectorClick()">No Server Selected</div>
+	<div id="serverlist" style="display:none"></div>
+	</div>
+	<div id="scroller" style="position:relative;">
+	<div id="channel0"><span></span></div>
+	</div>
+	</div>
+	</div>
+	<div class="submenu" id="channelmenu" style="display:none;">
+	<form action="" id="password"><label for="pwinput">&nbsp;Password:&nbsp;</label><input id="pwinput" onchange="savePassword()" /><hr /></form>
+	<a onclick="goHere()">Go Here</a>
+	<a onclick="moveHere()">Move Selection Here</a>
+	<hr />
+	<a onclick="selectMembers()">Select All Members</a>
+	<a onclick="unselectMembers()">Unselect All Members</a>
+	<hr />
+	<a onclick="hideAllMenus()">Cancel</a>
+	</div>
+</div>
+<div id="chatarea">
+	</div>
+</body>
+</html>
